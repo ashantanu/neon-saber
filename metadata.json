@@ -1,0 +1,7 @@
+{
+  "name": "Neon Saber VR (Web)",
+  "description": "A Tron-legacy themed rhythm game using hand tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
