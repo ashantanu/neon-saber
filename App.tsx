@@ -5,6 +5,7 @@ import GameScene from './components/GameScene';
 import UIOverlay from './components/UIOverlay';
 import { GameState, HandData, Song } from './types';
 import { SONGS } from './constants';
+import { getAudio8Bit } from './utils/audio8bit';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -12,6 +13,7 @@ const App: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [currentSong, setCurrentSong] = useState<Song | null>(SONGS[0]);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [difficulty, setDifficulty] = useState(1); // 1 = Normal, 2 = Hard, 3 = Expert
   
   // Audio Ref
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -79,6 +81,11 @@ const App: React.FC = () => {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
     }
+
+    // Stop 8-bit background music
+    const audio8bit = getAudio8Bit();
+    audio8bit.stopBackgroundMusic();
+
     setGameState(GameState.GAME_OVER);
   }, []);
 
@@ -88,24 +95,33 @@ const App: React.FC = () => {
         setStreak(0);
         setTimeLeft(60); // 1 minute timer
         setGameState(GameState.PLAYING);
-        
+
+        // Play 8-bit game start sound
+        const audio8bit = getAudio8Bit();
+        audio8bit.playGameStart();
+
+        // Start 8-bit background music after a short delay
+        setTimeout(() => {
+          audio8bit.startBackgroundMusic();
+        }, 600);
+
         // Ensure audio src is set
         if (audioRef.current.src !== currentSong.url) {
              audioRef.current.src = currentSong.url;
         }
-        
+
         audioRef.current.load();
-        
+
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
             playPromise.catch(e => {
                 console.error("Audio play failed. User interaction might be required.", e);
             });
         }
-        
+
         // Start Timer
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-        
+
         timerIntervalRef.current = window.setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
@@ -117,7 +133,7 @@ const App: React.FC = () => {
         }, 1000);
 
         audioRef.current.onended = () => {
-            stopGame(); 
+            stopGame();
         };
     }
   };
@@ -129,6 +145,10 @@ const App: React.FC = () => {
         audioRef.current.currentTime = 0;
     }
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+
+    // Stop 8-bit background music
+    const audio8bit = getAudio8Bit();
+    audio8bit.stopBackgroundMusic();
   };
 
   const handleScore = (points: number) => {
@@ -166,24 +186,27 @@ const App: React.FC = () => {
     <div className="w-full h-screen bg-black relative overflow-hidden">
       {/* 3D Scene Layer */}
       <div className="absolute inset-0 z-0">
-        <GameScene 
-            gameState={gameState} 
-            hands={handDataRef} 
+        <GameScene
+            gameState={gameState}
+            hands={handDataRef}
             song={currentSong}
+            difficulty={difficulty}
             onScore={handleScore}
             onMiss={handleMiss}
         />
       </div>
 
       {/* UI Layer */}
-      <UIOverlay 
-        gameState={gameState} 
-        score={score} 
+      <UIOverlay
+        gameState={gameState}
+        score={score}
         streak={streak}
         timeLeft={timeLeft}
-        currentSong={currentSong} 
-        onSelectSong={setCurrentSong} 
-        onStart={startGame} 
+        currentSong={currentSong}
+        difficulty={difficulty}
+        onSelectSong={setCurrentSong}
+        onSetDifficulty={setDifficulty}
+        onStart={startGame}
         onRestart={restartGame}
       />
 

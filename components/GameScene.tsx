@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { Vector2, Vector3, Quaternion } from 'three';
 import { HandData, GameState, Song, CubeData, ExplosionEvent } from '../types';
 import { GAME_CONFIG, COLORS } from '../constants';
+import { getAudio8Bit } from '../utils/audio8bit';
 
 // Declare intrinsic elements for TS
 declare global {
@@ -241,16 +242,18 @@ const Cube: React.FC<CubeProps> = ({
     );
 };
 
-const CubeManager = ({ 
-    gameState, 
-    song, 
-    hands, 
-    onScore, 
-    onMiss 
-}: { 
-    gameState: GameState, 
-    song: Song | null, 
+const CubeManager = ({
+    gameState,
+    song,
+    hands,
+    difficulty,
+    onScore,
+    onMiss
+}: {
+    gameState: GameState,
+    song: Song | null,
     hands: React.MutableRefObject<HandData>,
+    difficulty: number,
     onScore: (points: number) => void,
     onMiss: () => void
 }) => {
@@ -268,21 +271,31 @@ const CubeManager = ({
             return;
         }
 
-        const beatInterval = 60 / song.bpm;
+        // Difficulty multiplier: 1 = normal, 2 = 2x faster, 3 = 3x faster
+        const beatInterval = (60 / song.bpm) / difficulty;
         if (now - lastSpawnTime.current > beatInterval) {
             lastSpawnTime.current = now;
-            
+
             const spawnOnLeft = Math.random() > 0.5;
             // Left Lane (-X) corresponds to Left/Orange Saber
             // Right Lane (+X) corresponds to Right/Cyan Saber
-            const laneX = spawnOnLeft ? -GAME_CONFIG.LANE_WIDTH : GAME_CONFIG.LANE_WIDTH;
+
+            // Add significant horizontal variation within each half
+            // Left half: -2.2 to -0.2, Right half: +0.2 to +2.2
+            const laneX = spawnOnLeft
+                ? -0.2 - Math.random() * 2.0  // Range: -0.2 to -2.2 (2.0 unit spread)
+                : 0.2 + Math.random() * 2.0;  // Range: +0.2 to +2.2 (2.0 unit spread)
             const colorType = spawnOnLeft ? 'orange' : 'cyan';
 
-            const heightY = 1.0 + (Math.random() - 0.5) * 0.4;
+            // Significant vertical variation for more challenge
+            const heightY = 0.3 + Math.random() * 2.0; // Range: 0.3 to 2.3 (2.0 unit spread)
+
+            // Add slight depth variation for more dynamic positioning
+            const depthZ = GAME_CONFIG.SPAWN_Z + (Math.random() - 0.5) * 3;
 
             const newCube: CubeData = {
                 id: `cube-${idCounter.current++}`,
-                position: new Vector3(laneX, heightY, GAME_CONFIG.SPAWN_Z),
+                position: new Vector3(laneX, heightY, depthZ),
                 color: colorType,
                 active: true,
                 spawnTime: now
@@ -297,12 +310,16 @@ const CubeManager = ({
     const handleCubeHit = (id: string, pos: Vector3, color: string) => {
         setCubes(prev => prev.filter(c => c.id !== id));
         onScore(100);
-        
+
+        // Play 8-bit explosion sound
+        const audio8bit = getAudio8Bit();
+        audio8bit.playExplosion();
+
         const particles = [];
         for(let i=0; i<15; i++) {
              particles.push({
                  id: i,
-                 position: new Vector3(0,0,0), 
+                 position: new Vector3(0,0,0),
                  velocity: new Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(5 + Math.random() * 5),
                  color: color,
                  life: 0.5 + Math.random() * 0.5,
@@ -310,7 +327,7 @@ const CubeManager = ({
              });
              particles[i].position.copy(pos);
         }
-        
+
         setExplosions(prev => [...prev, {
             id: `exp-${id}`,
             particles: particles,
@@ -343,14 +360,15 @@ interface GameSceneProps {
     gameState: GameState;
     hands: React.MutableRefObject<HandData>;
     song: Song | null;
+    difficulty: number;
     onScore: (points: number) => void;
     onMiss: () => void;
 }
 
-const GameScene: React.FC<GameSceneProps> = ({ gameState, hands, song, onScore, onMiss }) => {
+const GameScene: React.FC<GameSceneProps> = ({ gameState, hands, song, difficulty, onScore, onMiss }) => {
     return (
-        <Canvas 
-            camera={{ position: [0, 1.5, 4], fov: 60 }} 
+        <Canvas
+            camera={{ position: [0, 1.0, 4], fov: 60 }}
             dpr={[1, 2]}
             gl={{ toneMapping: THREE.ReinhardToneMapping }}
         >
@@ -364,11 +382,12 @@ const GameScene: React.FC<GameSceneProps> = ({ gameState, hands, song, onScore, 
             <Saber hands={hands} side="left" color={COLORS.CYAN} />
             <Saber hands={hands} side="right" color={COLORS.ORANGE} />
 
-            <CubeManager 
-                gameState={gameState} 
-                song={song} 
-                hands={hands} 
-                onScore={onScore} 
+            <CubeManager
+                gameState={gameState}
+                song={song}
+                hands={hands}
+                difficulty={difficulty}
+                onScore={onScore}
                 onMiss={onMiss}
             />
 

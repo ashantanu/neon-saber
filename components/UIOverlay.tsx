@@ -9,20 +9,24 @@ interface UIOverlayProps {
   streak: number;
   timeLeft: number;
   currentSong: Song | null;
+  difficulty: number;
   onSelectSong: (song: Song) => void;
+  onSetDifficulty: (difficulty: number) => void;
   onStart: () => void;
   onRestart: () => void;
 }
 
-const UIOverlay: React.FC<UIOverlayProps> = ({ 
-  gameState, 
-  score, 
+const UIOverlay: React.FC<UIOverlayProps> = ({
+  gameState,
+  score,
   streak,
   timeLeft,
-  currentSong, 
-  onSelectSong, 
-  onStart, 
-  onRestart 
+  currentSong,
+  difficulty,
+  onSelectSong,
+  onSetDifficulty,
+  onStart,
+  onRestart
 }) => {
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col z-10">
@@ -91,12 +95,38 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
                ))}
            </div>
 
-           <button 
+           {/* Difficulty Slider */}
+           <div className="mb-6 p-4 bg-gray-900/60 border border-gray-800 rounded-lg">
+               <div className="flex justify-between items-center mb-3">
+                   <h3 className="text-sm font-bold text-white">DIFFICULTY</h3>
+                   <span className="text-xs font-mono text-cyan-400">
+                       {difficulty === 1 ? 'NORMAL' : difficulty === 2 ? 'HARD' : 'EXPERT'}
+                   </span>
+               </div>
+               <input
+                   type="range"
+                   min="1"
+                   max="3"
+                   value={difficulty}
+                   onChange={(e) => onSetDifficulty(Number(e.target.value))}
+                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                   style={{
+                       background: `linear-gradient(to right, rgb(6, 182, 212) 0%, rgb(6, 182, 212) ${((difficulty - 1) / 2) * 100}%, rgb(55, 65, 81) ${((difficulty - 1) / 2) * 100}%, rgb(55, 65, 81) 100%)`
+                   }}
+               />
+               <div className="flex justify-between mt-2 text-[10px] text-gray-500">
+                   <span>NORMAL</span>
+                   <span>HARD</span>
+                   <span>EXPERT</span>
+               </div>
+           </div>
+
+           <button
              disabled={!currentSong}
              onClick={onStart}
              className={`w-full py-4 text-xl font-bold rounded-xl flex items-center justify-center gap-3 transition-all duration-300 mb-4
-                 ${currentSong 
-                     ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white hover:scale-105 shadow-[0_0_20px_rgba(0,255,255,0.5)]' 
+                 ${currentSong
+                     ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white hover:scale-105 shadow-[0_0_20px_rgba(0,255,255,0.5)]'
                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
            >
                <Play fill="currentColor" /> PLAY
