@@ -32,6 +32,7 @@ export interface CubeData {
   color: 'cyan' | 'orange';
   active: boolean;
   spawnTime: number;
+  emoji: string;
 }
 
 export interface ExplosionParticle {
