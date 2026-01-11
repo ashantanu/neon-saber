@@ -3,10 +3,9 @@ import { Vector3 } from 'three';
 import HandTracker from './components/HandTracker';
 import GameScene from './components/GameScene';
 import UIOverlay from './components/UIOverlay';
-import { GameState, HandData, Song, HitResult, BeatMap } from './types';
+import { GameState, HandData, Song } from './types';
 import { SONGS, GAME_CONFIG } from './constants';
 import { getAudio8Bit } from './utils/audio8bit';
-import { getBeatDetector, analyzeAudioBuffer } from './utils/beatDetector';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -18,14 +17,10 @@ const App: React.FC = () => {
   const [currentSong, setCurrentSong] = useState<Song | null>(SONGS[0]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [difficulty, setDifficulty] = useState(1);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [customSongUrl, setCustomSongUrl] = useState('');
 
-  // Audio Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
 
-  // Hand Data Ref with velocity history
   const handDataRef = useRef<HandData>({
     left: null,
     right: null,
@@ -52,14 +47,10 @@ const App: React.FC = () => {
     const now = performance.now() / 1000;
     const delta = now - prevHands.current.time;
 
-    // Update Velocity with history tracking
     if (delta > 0) {
-      // Left hand velocity
       if (left && prevHands.current.left) {
         const newLeftVel = new Vector3().subVectors(left, prevHands.current.left).divideScalar(delta);
         handDataRef.current.leftVelocity.copy(newLeftVel);
-
-        // Add to history
         handDataRef.current.leftVelocityHistory.push(newLeftVel.clone());
         if (handDataRef.current.leftVelocityHistory.length > GAME_CONFIG.VELOCITY_HISTORY_SIZE) {
           handDataRef.current.leftVelocityHistory.shift();
@@ -69,12 +60,9 @@ const App: React.FC = () => {
         handDataRef.current.leftVelocityHistory = [];
       }
 
-      // Right hand velocity
       if (right && prevHands.current.right) {
         const newRightVel = new Vector3().subVectors(right, prevHands.current.right).divideScalar(delta);
         handDataRef.current.rightVelocity.copy(newRightVel);
-
-        // Add to history
         handDataRef.current.rightVelocityHistory.push(newRightVel.clone());
         if (handDataRef.current.rightVelocityHistory.length > GAME_CONFIG.VELOCITY_HISTORY_SIZE) {
           handDataRef.current.rightVelocityHistory.shift();
@@ -85,13 +73,11 @@ const App: React.FC = () => {
       }
     }
 
-    // Update Positions & Directions
     handDataRef.current.left = left;
     handDataRef.current.right = right;
     if (leftDir) handDataRef.current.leftDirection.copy(leftDir);
     if (rightDir) handDataRef.current.rightDirection.copy(rightDir);
 
-    // Save previous
     prevHands.current = {
       left: left ? left.clone() : null,
       right: right ? right.clone() : null,
@@ -107,58 +93,31 @@ const App: React.FC = () => {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-
-    // Stop 8-bit background music
-    const audio8bit = getAudio8Bit();
-    audio8bit.stopBackgroundMusic();
-
-    // Disconnect beat detector
-    const beatDetector = getBeatDetector();
-    beatDetector.disconnect();
-
+    getAudio8Bit().stopBackgroundMusic();
     setGameState(GameState.GAME_OVER);
   }, []);
 
-  const startGame = async () => {
+  const startGame = () => {
     if (currentSong && audioRef.current) {
       setScore(0);
       setStreak(0);
       setMaxStreak(0);
       setPerfectHits(0);
       setTotalHits(0);
-      setTimeLeft(currentSong.duration);
+      setTimeLeft(60);
       setGameState(GameState.PLAYING);
 
-      // Play 8-bit game start sound
       const audio8bit = getAudio8Bit();
       audio8bit.playGameStart();
+      setTimeout(() => audio8bit.startBackgroundMusic(), 600);
 
-      // Start 8-bit background music after a short delay
-      setTimeout(() => {
-        audio8bit.startBackgroundMusic();
-      }, 600);
-
-      // Ensure audio src is set
       if (audioRef.current.src !== currentSong.url) {
         audioRef.current.src = currentSong.url;
       }
-
       audioRef.current.load();
+      audioRef.current.play().catch(e => console.error("Audio play failed:", e));
 
-      // Connect beat detector for real-time analysis
-      const beatDetector = getBeatDetector();
-      beatDetector.connect(audioRef.current);
-
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => {
-          console.error("Audio play failed. User interaction might be required.", e);
-        });
-      }
-
-      // Start Timer
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-
       timerIntervalRef.current = window.setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -169,9 +128,7 @@ const App: React.FC = () => {
         });
       }, 1000);
 
-      audioRef.current.onended = () => {
-        stopGame();
-      };
+      audioRef.current.onended = () => stopGame();
     }
   };
 
@@ -182,96 +139,28 @@ const App: React.FC = () => {
       audioRef.current.currentTime = 0;
     }
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-
-    // Stop 8-bit background music
-    const audio8bit = getAudio8Bit();
-    audio8bit.stopBackgroundMusic();
-
-    // Disconnect beat detector
-    const beatDetector = getBeatDetector();
-    beatDetector.disconnect();
+    getAudio8Bit().stopBackgroundMusic();
   };
 
-  const handleScore = (points: number, result: HitResult) => {
-    setScore(prev => prev + points);
+  const handleScore = (points: number) => {
+    setScore(prev => prev + points * (1 + Math.floor(streak / 10) * 0.1));
     setStreak(prev => {
       const newStreak = prev + 1;
       setMaxStreak(current => Math.max(current, newStreak));
       return newStreak;
     });
     setTotalHits(prev => prev + 1);
-    if (result.perfectHit) {
-      setPerfectHits(prev => prev + 1);
-    }
   };
 
   const handleMiss = () => {
     setStreak(0);
   };
 
-  // Handle custom song URL (YouTube or direct audio)
-  const handleCustomSong = async (url: string) => {
-    setIsAnalyzing(true);
-    setCustomSongUrl(url);
-
-    try {
-      // For now, handle direct audio URLs
-      // YouTube integration would require a backend service
-      if (url.includes('youtube.com') || url.includes('youtu.be')) {
-        // Show message that YouTube requires backend
-        alert('YouTube integration requires a backend service. Please use a direct audio URL for now, or see the BEAT_SABER_PLAN.md for implementation details.');
-        setIsAnalyzing(false);
-        return;
-      }
-
-      // Create custom song from URL
-      const customSong: Song = {
-        id: 'custom',
-        title: 'Custom Song',
-        artist: 'Unknown',
-        bpm: 120, // Will be detected
-        url: url,
-        duration: 180, // Default 3 minutes
-        color: '#FF00FF'
-      };
-
-      // Try to analyze the audio
-      try {
-        const response = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioContext = new AudioContext();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-        // Analyze for beats
-        const beatMap = await analyzeAudioBuffer(audioBuffer);
-        customSong.beatMap = beatMap;
-        customSong.bpm = beatMap.bpm;
-        customSong.duration = audioBuffer.duration;
-
-        console.log(`Detected BPM: ${beatMap.bpm}, Beats: ${beatMap.beats.length}`);
-      } catch (e) {
-        console.warn('Could not analyze audio, using default BPM:', e);
-      }
-
-      setCurrentSong(customSong);
-    } catch (error) {
-      console.error('Failed to load custom song:', error);
-      alert('Failed to load the audio file. Please check the URL.');
-    }
-
-    setIsAnalyzing(false);
-  };
-
-  // Initialize Audio Element
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.crossOrigin = "anonymous";
     audioRef.current.volume = 0.6;
     audioRef.current.preload = "auto";
-
-    audioRef.current.onerror = (e) => {
-      console.error("Audio Error:", audioRef.current?.error, e);
-    };
 
     return () => {
       if (audioRef.current) {
@@ -286,21 +175,17 @@ const App: React.FC = () => {
 
   return (
     <div className="w-full h-screen bg-black relative overflow-hidden">
-      {/* 3D Scene Layer */}
       <div className="absolute inset-0 z-0">
         <GameScene
           gameState={gameState}
           hands={handDataRef}
           song={currentSong}
           difficulty={difficulty}
-          streak={streak}
-          audioElement={audioRef.current}
           onScore={handleScore}
           onMiss={handleMiss}
         />
       </div>
 
-      {/* UI Layer */}
       <UIOverlay
         gameState={gameState}
         score={score}
@@ -311,15 +196,14 @@ const App: React.FC = () => {
         timeLeft={timeLeft}
         currentSong={currentSong}
         difficulty={difficulty}
-        isAnalyzing={isAnalyzing}
+        isAnalyzing={false}
         onSelectSong={setCurrentSong}
         onSetDifficulty={setDifficulty}
         onStart={startGame}
         onRestart={restartGame}
-        onCustomSong={handleCustomSong}
+        onCustomSong={() => {}}
       />
 
-      {/* Hidden Hand Tracker */}
       <HandTracker onHandsUpdate={handleHandUpdate} />
     </div>
   );

@@ -1,14 +1,12 @@
 import React, { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { EffectComposer, Bloom, ChromaticAberration } from '@react-three/postprocessing';
-import { Stars, Trail } from '@react-three/drei';
+import { Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { Vector2, Vector3, Quaternion } from 'three';
-import { HandData, GameState, Song, CubeData, ExplosionEvent, SlashDirection, HitResult, SliceDebris, BeatMap } from '../types';
+import { HandData, GameState, Song, CubeData, ExplosionEvent, SlashDirection, HitResult } from '../types';
 import { GAME_CONFIG, COLORS, DIRECTION_ROTATIONS } from '../constants';
 import { getAudio8Bit } from '../utils/audio8bit';
-import { calculateHitScore, getAverageVelocity } from '../utils/slashValidator';
-import { getPatternGenerator, generateSimpleBeatMap, SpawnEvent } from '../utils/patternGenerator';
 
 // --- Sub-components ---
 
@@ -31,13 +29,11 @@ const MovingGrid = () => {
   );
 };
 
-// Saber with trail effect
+// Simple Saber without problematic Trail
 const Saber = ({ hands, side, color }: { hands: React.MutableRefObject<HandData>; side: 'left' | 'right'; color: string }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const tipRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
 
-  // Smoothing refs
   const currentPos = useRef(new Vector3(side === 'left' ? -0.8 : 0.8, 1, 0));
   const currentQuat = useRef(new Quaternion());
 
@@ -51,7 +47,6 @@ const Saber = ({ hands, side, color }: { hands: React.MutableRefObject<HandData>
     const targetPos = side === 'left' ? hands.current.left : hands.current.right;
     const targetDir = side === 'left' ? hands.current.leftDirection : hands.current.rightDirection;
 
-    // Position Smoothing (Lerp)
     if (targetPos) {
       currentPos.current.lerp(targetPos, 25 * delta);
     } else {
@@ -59,14 +54,12 @@ const Saber = ({ hands, side, color }: { hands: React.MutableRefObject<HandData>
     }
     groupRef.current.position.copy(currentPos.current);
 
-    // Rotation Smoothing (Slerp)
     if (targetDir) {
       dummyQuat.setFromUnitVectors(upVec, targetDir);
       currentQuat.current.slerp(dummyQuat, 20 * delta);
       groupRef.current.quaternion.copy(currentQuat.current);
     }
 
-    // Light Flicker
     if (lightRef.current) {
       lightRef.current.intensity = 1.5 + Math.random() * 0.5;
     }
@@ -74,31 +67,14 @@ const Saber = ({ hands, side, color }: { hands: React.MutableRefObject<HandData>
 
   return (
     <group ref={groupRef}>
-      {/* Handle */}
       <mesh position={[0, -0.1, 0]}>
         <cylinderGeometry args={[0.03, 0.03, 0.2, 16]} />
         <meshStandardMaterial color="#333" roughness={0.4} metalness={0.8} />
       </mesh>
-
-      {/* Blade with Trail */}
-      <Trail
-        width={0.3}
-        length={6}
-        color={color}
-        attenuation={(t) => t * t}
-      >
-        <mesh ref={tipRef} position={[0, GAME_CONFIG.SABER_LENGTH, 0]}>
-          <sphereGeometry args={[0.02, 8, 8]} />
-          <meshBasicMaterial color={color} />
-        </mesh>
-      </Trail>
-
-      {/* Blade core */}
       <mesh position={[0, 0.6, 0]}>
         <cylinderGeometry args={[0.02, 0.04, GAME_CONFIG.SABER_LENGTH, 16]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2} toneMapped={false} />
       </mesh>
-
       <pointLight ref={lightRef} color={color} distance={4} decay={2} position={[0, 0.5, 0]} />
     </group>
   );
@@ -130,9 +106,7 @@ const Explosions = ({ explosions }: { explosions: ExplosionEvent[] }) => {
             dummy.updateMatrix();
 
             meshRef.current!.setMatrixAt(instanceIdx, dummy.matrix);
-
-            const color = new THREE.Color(p.color);
-            meshRef.current!.setColorAt(instanceIdx, color);
+            meshRef.current!.setColorAt(instanceIdx, new THREE.Color(p.color));
 
             instanceIdx++;
           }
@@ -153,89 +127,30 @@ const Explosions = ({ explosions }: { explosions: ExplosionEvent[] }) => {
   );
 };
 
-// Slice debris effect - cube halves flying apart
-const SliceDebrisEffect = ({ debris }: { debris: SliceDebris[] }) => {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-
-  useFrame((state, delta) => {
-    if (!meshRef.current) return;
-
-    let instanceIdx = 0;
-
-    debris.forEach(d => {
-      const age = state.clock.getElapsedTime() - d.startTime;
-      const lifeRatio = 1 - age / 1.5; // 1.5 second lifetime
-
-      if (lifeRatio > 0 && instanceIdx < 200) {
-        // Update position with velocity and gravity
-        d.position.addScaledVector(d.velocity, delta);
-        d.position.y -= 9.8 * delta * age; // Gravity
-
-        // Update rotation
-        d.rotation.x += d.rotationSpeed.x * delta;
-        d.rotation.y += d.rotationSpeed.y * delta;
-        d.rotation.z += d.rotationSpeed.z * delta;
-
-        dummy.position.copy(d.position);
-        dummy.rotation.set(d.rotation.x, d.rotation.y, d.rotation.z);
-        dummy.scale.setScalar(0.25 * lifeRatio);
-        dummy.updateMatrix();
-
-        meshRef.current!.setMatrixAt(instanceIdx, dummy.matrix);
-
-        const color = new THREE.Color(d.color);
-        meshRef.current!.setColorAt(instanceIdx, color);
-
-        instanceIdx++;
-      }
-    });
-
-    meshRef.current.count = instanceIdx;
-    meshRef.current.instanceMatrix.needsUpdate = true;
-    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  });
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, 200]}>
-      <boxGeometry args={[0.5, 0.5, 0.25]} />
-      <meshStandardMaterial toneMapped={false} />
-    </instancedMesh>
-  );
-};
-
 // --- Directional Cube ---
 
 interface CubeProps {
   data: CubeData;
   hands: React.MutableRefObject<HandData>;
-  onHit: (id: string, pos: Vector3, color: string, result: HitResult, direction: SlashDirection) => void;
+  onHit: (id: string, pos: Vector3, color: string) => void;
   onMiss: (id: string) => void;
-  streak: number;
 }
 
-const DirectionalCube: React.FC<CubeProps> = ({ data, hands, onHit, onMiss, streak }) => {
+const DirectionalCube: React.FC<CubeProps> = ({ data, hands, onHit, onMiss }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const hitRef = useRef(false);
-  const glowRef = useRef(0);
 
-  // Materials
   const matCyan = useMemo(() => new THREE.MeshStandardMaterial({
-    color: COLORS.CYAN,
-    emissive: COLORS.CYAN_GLOW,
-    emissiveIntensity: 1
+    color: COLORS.CYAN, emissive: COLORS.CYAN_GLOW, emissiveIntensity: 1
   }), []);
 
   const matOrange = useMemo(() => new THREE.MeshStandardMaterial({
-    color: COLORS.ORANGE,
-    emissive: COLORS.ORANGE_GLOW,
-    emissiveIntensity: 1
+    color: COLORS.ORANGE, emissive: COLORS.ORANGE_GLOW, emissiveIntensity: 1
   }), []);
 
-  // Arrow geometry for direction indicator
+  // Arrow geometry
   const arrowGeo = useMemo(() => {
     const shape = new THREE.Shape();
-    // Arrow pointing up
     shape.moveTo(0, 0.15);
     shape.lineTo(0.1, 0);
     shape.lineTo(0.03, 0);
@@ -244,13 +159,10 @@ const DirectionalCube: React.FC<CubeProps> = ({ data, hands, onHit, onMiss, stre
     shape.lineTo(-0.03, 0);
     shape.lineTo(-0.1, 0);
     shape.lineTo(0, 0.15);
-
-    const extrudeSettings = { depth: 0.02, bevelEnabled: false };
-    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    return new THREE.ExtrudeGeometry(shape, { depth: 0.02, bevelEnabled: false });
   }, []);
 
   const matWhite = useMemo(() => new THREE.MeshBasicMaterial({ color: 'white' }), []);
-  const matDot = useMemo(() => new THREE.MeshBasicMaterial({ color: '#333' }), []);
 
   useFrame((state, delta) => {
     if (!meshRef.current || hitRef.current) return;
@@ -258,57 +170,33 @@ const DirectionalCube: React.FC<CubeProps> = ({ data, hands, onHit, onMiss, stre
     meshRef.current.position.z += GAME_CONFIG.CUBE_SPEED * delta;
     const currentZ = meshRef.current.position.z;
 
-    // Pulse glow as cube approaches
-    glowRef.current = Math.sin(state.clock.getElapsedTime() * 5) * 0.3 + 1;
-    const mat = data.color === 'cyan' ? matCyan : matOrange;
-    mat.emissiveIntensity = glowRef.current;
-
     // Collision Window
     if (currentZ > -2 && currentZ < 3) {
       const h = hands.current;
+      // FIXED: Cyan cubes hit by LEFT hand (cyan saber), Orange cubes hit by RIGHT hand (orange saber)
       const isCyan = data.color === 'cyan';
       const targetHandPos = isCyan ? h.left : h.right;
-      const targetVelocity = isCyan ? h.leftVelocity : h.rightVelocity;
-      const velocityHistory = isCyan ? h.leftVelocityHistory : h.rightVelocityHistory;
+      const targetDir = isCyan ? h.leftDirection : h.rightDirection;
 
-      if (targetHandPos) {
-        // Get average velocity for more accurate direction detection
-        const avgVelocity = velocityHistory.length > 0
-          ? getAverageVelocity(velocityHistory)
-          : targetVelocity.clone();
+      if (targetHandPos && targetDir) {
+        const saberTip = targetHandPos.clone().addScaledVector(targetDir, 0.6);
+        const dist = meshRef.current.position.distanceTo(saberTip);
+        const distHandle = meshRef.current.position.distanceTo(targetHandPos);
 
-        // Calculate hit distance
-        const cubePos = meshRef.current.position;
-        const dist = cubePos.distanceTo(targetHandPos);
-
-        // Check if within hit range
-        if (dist < GAME_CONFIG.HIT_THRESHOLD) {
-          // Calculate hit score
-          const result = calculateHitScore(avgVelocity, data.direction, dist, streak);
-
-          if (result.hit) {
-            hitRef.current = true;
-            meshRef.current.visible = false;
-            onHit(
-              data.id,
-              meshRef.current.position.clone(),
-              data.color === 'cyan' ? COLORS.CYAN : COLORS.ORANGE,
-              result,
-              data.direction
-            );
-          }
+        if (dist < GAME_CONFIG.HIT_THRESHOLD || distHandle < GAME_CONFIG.HIT_THRESHOLD) {
+          hitRef.current = true;
+          meshRef.current.visible = false;
+          onHit(data.id, meshRef.current.position.clone(), isCyan ? COLORS.CYAN : COLORS.ORANGE);
         }
       }
     }
 
-    // Miss detection
     if (currentZ > GAME_CONFIG.DESPAWN_Z) {
       hitRef.current = true;
       onMiss(data.id);
     }
   });
 
-  // Calculate arrow rotation based on direction
   const arrowRotation = DIRECTION_ROTATIONS[data.direction] || 0;
   const showArrow = data.direction !== SlashDirection.ANY;
 
@@ -316,43 +204,22 @@ const DirectionalCube: React.FC<CubeProps> = ({ data, hands, onHit, onMiss, stre
     <mesh ref={meshRef} position={data.position.clone()}>
       <boxGeometry args={[0.5, 0.5, 0.5]} />
       <primitive object={data.color === 'cyan' ? matCyan : matOrange} attach="material" />
-
-      {/* Direction arrow on front face */}
-      {showArrow ? (
-        <mesh
-          geometry={arrowGeo}
-          material={matWhite}
-          rotation={[0, 0, arrowRotation]}
-          position={[0, 0, 0.26]}
-        />
-      ) : (
-        // Dot for ANY direction
-        <mesh position={[0, 0, 0.26]}>
-          <circleGeometry args={[0.08, 16]} />
-          <primitive object={matDot} attach="material" />
-        </mesh>
+      {showArrow && (
+        <mesh geometry={arrowGeo} material={matWhite} rotation={[0, 0, arrowRotation]} position={[0, 0, 0.26]} />
       )}
-
-      {/* Glow light */}
-      <pointLight
-        color={data.color === 'cyan' ? COLORS.CYAN : COLORS.ORANGE}
-        distance={2}
-        intensity={2}
-      />
+      <pointLight color={data.color === 'cyan' ? COLORS.CYAN : COLORS.ORANGE} distance={2} intensity={2} />
     </mesh>
   );
 };
 
-// --- Cube Manager with Beat-Sync Spawning ---
+// --- Cube Manager - Simple BPM-based spawning ---
 
 interface CubeManagerProps {
   gameState: GameState;
   song: Song | null;
   hands: React.MutableRefObject<HandData>;
   difficulty: number;
-  streak: number;
-  audioElement: HTMLAudioElement | null;
-  onScore: (points: number, result: HitResult) => void;
+  onScore: (points: number) => void;
   onMiss: () => void;
 }
 
@@ -361,97 +228,88 @@ const CubeManager: React.FC<CubeManagerProps> = ({
   song,
   hands,
   difficulty,
-  streak,
-  audioElement,
   onScore,
   onMiss
 }) => {
   const [cubes, setCubes] = useState<CubeData[]>([]);
   const [explosions, setExplosions] = useState<ExplosionEvent[]>([]);
-  const [debris, setDebris] = useState<SliceDebris[]>([]);
-
-  // Beat-based spawning state
-  const spawnEventsRef = useRef<SpawnEvent[]>([]);
-  const nextSpawnIndexRef = useRef(0);
   const lastSpawnTime = useRef(0);
+  const idCounter = useRef(0);
   const clockRef = useRef(new THREE.Clock());
 
-  // Initialize spawn events when song starts
+  // Reset when game starts
   React.useEffect(() => {
-    if (gameState === GameState.PLAYING && song) {
-      const generator = getPatternGenerator();
-      generator.reset();
-
-      // Generate beat map (use song's beatMap if available, otherwise generate from BPM)
-      const beatMap = song.beatMap || generateSimpleBeatMap(song.bpm, song.duration);
-
-      // Generate spawn events
-      spawnEventsRef.current = generator.generateFromBeatMap(beatMap, difficulty);
-      nextSpawnIndexRef.current = 0;
+    if (gameState === GameState.PLAYING) {
       clockRef.current.start();
+      lastSpawnTime.current = 0;
+      idCounter.current = 0;
       setCubes([]);
       setExplosions([]);
-      setDebris([]);
     }
-  }, [gameState, song, difficulty]);
+  }, [gameState]);
 
   useFrame((state) => {
-    if (gameState !== GameState.PLAYING || !audioElement) {
+    const now = clockRef.current.getElapsedTime();
+
+    if (gameState !== GameState.PLAYING || !song) {
       if (cubes.length > 0 && gameState === GameState.MENU) setCubes([]);
       return;
     }
 
-    // Get current audio time
-    const audioTime = audioElement.currentTime;
+    // Simple BPM-based spawning
+    const beatInterval = (60 / song.bpm) / difficulty;
+    if (now - lastSpawnTime.current > beatInterval) {
+      lastSpawnTime.current = now;
 
-    // Calculate when cubes should spawn (look ahead by travel time)
-    const travelTime = Math.abs(GAME_CONFIG.SPAWN_Z) / GAME_CONFIG.CUBE_SPEED;
-    const spawnTime = audioTime + travelTime;
+      const spawnLeft = Math.random() > 0.5;
+      const laneX = spawnLeft
+        ? -0.2 - Math.random() * 2.0
+        : 0.2 + Math.random() * 2.0;
 
-    // Spawn cubes that should appear
-    const events = spawnEventsRef.current;
-    while (
-      nextSpawnIndexRef.current < events.length &&
-      events[nextSpawnIndexRef.current].time <= spawnTime
-    ) {
-      const event = events[nextSpawnIndexRef.current];
+      // Left lane = orange cubes (hit by right/orange saber)
+      // Right lane = cyan cubes (hit by left/cyan saber)
+      const colorType = spawnLeft ? 'orange' : 'cyan';
+      const heightY = 0.3 + Math.random() * 2.0;
 
-      // Add cubes from this event
-      setCubes(prev => [...prev, ...event.cubes.map(c => ({
-        ...c,
-        position: c.position.clone()
-      }))]);
+      // Pick a direction
+      const directions: SlashDirection[] = [
+        SlashDirection.DOWN, SlashDirection.DOWN, SlashDirection.DOWN,
+        SlashDirection.UP, SlashDirection.LEFT, SlashDirection.RIGHT,
+        SlashDirection.DOWN_LEFT, SlashDirection.DOWN_RIGHT
+      ];
+      const direction = directions[Math.floor(Math.random() * directions.length)];
 
-      nextSpawnIndexRef.current++;
+      const newCube: CubeData = {
+        id: `cube-${idCounter.current++}`,
+        position: new Vector3(laneX, heightY, GAME_CONFIG.SPAWN_Z),
+        color: colorType,
+        active: true,
+        spawnTime: now,
+        direction,
+        row: Math.floor(heightY),
+        column: spawnLeft ? 0 : 3
+      };
+      setCubes(prev => [...prev, newCube]);
     }
 
-    // Clean up old explosions and debris
-    const now = state.clock.getElapsedTime();
+    // Clean up explosions
     setExplosions(prev => prev.filter(e => now - e.startTime < 1.5));
-    setDebris(prev => prev.filter(d => now - d.startTime < 1.5));
   });
 
-  const handleCubeHit = (id: string, pos: Vector3, color: string, result: HitResult, direction: SlashDirection) => {
+  const handleCubeHit = (id: string, pos: Vector3, color: string) => {
     setCubes(prev => prev.filter(c => c.id !== id));
-    onScore(result.score, result);
+    onScore(100);
 
-    // Play sound
-    const audio8bit = getAudio8Bit();
-    audio8bit.playExplosion();
+    getAudio8Bit().playExplosion();
 
-    // Create explosion particles
     const particles = [];
-    const particleCount = result.perfectHit ? 25 : 15;
-    for (let i = 0; i < particleCount; i++) {
+    for (let i = 0; i < 15; i++) {
       particles.push({
         id: i,
         position: pos.clone(),
-        velocity: new Vector3(
-          Math.random() - 0.5,
-          Math.random() - 0.5,
-          Math.random() - 0.5
-        ).normalize().multiplyScalar(5 + Math.random() * 5),
-        color: result.perfectHit ? COLORS.PERFECT : color,
+        velocity: new Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+          .normalize().multiplyScalar(5 + Math.random() * 5),
+        color,
         life: 0.5 + Math.random() * 0.5,
         scale: 0.2 + Math.random() * 0.2
       });
@@ -462,40 +320,6 @@ const CubeManager: React.FC<CubeManagerProps> = ({
       particles,
       startTime: clockRef.current.getElapsedTime()
     }]);
-
-    // Create slice debris (two halves)
-    const sliceDir = DIRECTION_ROTATIONS[direction] || 0;
-    const debrisPieces: SliceDebris[] = [
-      {
-        id: `debris-${id}-left`,
-        position: pos.clone(),
-        velocity: new Vector3(-2 - Math.random() * 2, 2 + Math.random() * 2, 1),
-        rotation: new Vector3(0, 0, 0),
-        rotationSpeed: new Vector3(
-          (Math.random() - 0.5) * 10,
-          (Math.random() - 0.5) * 10,
-          (Math.random() - 0.5) * 10
-        ),
-        color,
-        startTime: clockRef.current.getElapsedTime(),
-        half: 'left'
-      },
-      {
-        id: `debris-${id}-right`,
-        position: pos.clone(),
-        velocity: new Vector3(2 + Math.random() * 2, 2 + Math.random() * 2, 1),
-        rotation: new Vector3(0, 0, 0),
-        rotationSpeed: new Vector3(
-          (Math.random() - 0.5) * 10,
-          (Math.random() - 0.5) * 10,
-          (Math.random() - 0.5) * 10
-        ),
-        color,
-        startTime: clockRef.current.getElapsedTime(),
-        half: 'right'
-      }
-    ];
-    setDebris(prev => [...prev, ...debrisPieces]);
   };
 
   const handleCubeMiss = (id: string) => {
@@ -512,44 +336,10 @@ const CubeManager: React.FC<CubeManagerProps> = ({
           hands={hands}
           onHit={handleCubeHit}
           onMiss={handleCubeMiss}
-          streak={streak}
         />
       ))}
       <Explosions explosions={explosions} />
-      <SliceDebrisEffect debris={debris} />
     </group>
-  );
-};
-
-// --- Hit Feedback Display ---
-const HitFeedback = ({ lastHit }: { lastHit: { result: HitResult; time: number } | null }) => {
-  const textRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    if (!textRef.current || !lastHit) return;
-
-    const age = state.clock.getElapsedTime() - lastHit.time;
-    if (age > 0.5) {
-      textRef.current.visible = false;
-      return;
-    }
-
-    textRef.current.visible = true;
-    textRef.current.position.y = 2 + age * 2;
-    const scale = 1 - age;
-    textRef.current.scale.setScalar(scale);
-  });
-
-  if (!lastHit) return null;
-
-  const text = lastHit.result.perfectHit ? 'PERFECT!' : lastHit.result.score >= 80 ? 'GREAT!' : 'OK';
-  const color = lastHit.result.perfectHit ? COLORS.PERFECT : COLORS.GOOD;
-
-  return (
-    <mesh ref={textRef} position={[0, 2, -5]}>
-      <planeGeometry args={[2, 0.5]} />
-      <meshBasicMaterial color={color} transparent opacity={0.8} />
-    </mesh>
   );
 };
 
@@ -560,9 +350,7 @@ interface GameSceneProps {
   hands: React.MutableRefObject<HandData>;
   song: Song | null;
   difficulty: number;
-  streak: number;
-  audioElement: HTMLAudioElement | null;
-  onScore: (points: number, result: HitResult) => void;
+  onScore: (points: number) => void;
   onMiss: () => void;
 }
 
@@ -571,18 +359,9 @@ const GameScene: React.FC<GameSceneProps> = ({
   hands,
   song,
   difficulty,
-  streak,
-  audioElement,
   onScore,
   onMiss
 }) => {
-  const [lastHit, setLastHit] = useState<{ result: HitResult; time: number } | null>(null);
-
-  const handleScore = (points: number, result: HitResult) => {
-    setLastHit({ result, time: performance.now() / 1000 });
-    onScore(points, result);
-  };
-
   return (
     <Canvas
       camera={{ position: [0, 1.0, 4], fov: 60 }}
@@ -604,13 +383,9 @@ const GameScene: React.FC<GameSceneProps> = ({
         song={song}
         hands={hands}
         difficulty={difficulty}
-        streak={streak}
-        audioElement={audioElement}
-        onScore={handleScore}
+        onScore={onScore}
         onMiss={onMiss}
       />
-
-      <HitFeedback lastHit={lastHit} />
 
       <EffectComposer enableNormalPass={false}>
         <Bloom luminanceThreshold={0.5} mipmapBlur intensity={1.5} radius={0.6} />
