@@ -44,10 +44,11 @@ export const SONGS: Song[] = [
 export const GAME_CONFIG = {
   CUBE_SPEED: 12, // Faster cubes for better rhythm feel
   SPAWN_Z: -30, // Start further back
-  HIT_Z: 0, 
-  DESPAWN_Z: 5, 
+  HIT_Z: 0,
+  DESPAWN_Z: 5,
   SABER_LENGTH: 1.2,
   LANE_WIDTH: 0.8,
   HIT_THRESHOLD: 1.2, // Increased from 0.8 to 1.2 for easier hits
   SLASH_THRESHOLD: 0.5, // Lowered significantly: practically any movement counts as a slash
+  VELOCITY_HISTORY_SIZE: 8, // Number of velocity samples to keep for smoothing
 };

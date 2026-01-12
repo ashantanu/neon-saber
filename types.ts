@@ -24,6 +24,8 @@ export interface HandData {
   rightDirection: Vector3; // Normalized direction vector
   leftVelocity: Vector3;
   rightVelocity: Vector3;
+  leftVelocityHistory: Vector3[]; // History of velocity samples for smoothing
+  rightVelocityHistory: Vector3[]; // History of velocity samples for smoothing
 }
 
 export interface CubeData {
