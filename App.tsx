@@ -45,8 +45,8 @@ const App: React.FC = () => {
   const upVec = useRef(new Vector3(0, 1, 0));
 
   // Smoothing factors (0-1, higher = more responsive but less smooth)
-  const POSITION_SMOOTHING = 0.3;  // Lerp factor for positions
-  const DIRECTION_SMOOTHING = 0.25; // Lerp factor for directions
+  const POSITION_SMOOTHING = 0.5;  // Lerp factor for positions
+  const DIRECTION_SMOOTHING = 0.4; // Lerp factor for directions
 
   const handleHandUpdate = useCallback((
       left: Vector3 | null,
