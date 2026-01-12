@@ -302,8 +302,8 @@ const CubeManager = ({
                 : 0.2 + Math.random() * 2.0;  // Range: +0.2 to +2.2 (2.0 unit spread)
             const colorType = spawnOnLeft ? 'orange' : 'cyan';
 
-            // Significant vertical variation for more challenge
-            const heightY = 0.3 + Math.random() * 2.0; // Range: 0.3 to 2.3 (2.0 unit spread)
+            // Vertical variation - kept in comfortable reach range
+            const heightY = 0.2 + Math.random() * 1.3; // Range: 0.2 to 1.5 (lowered for easier reach)
 
             // Add slight depth variation for more dynamic positioning
             const depthZ = GAME_CONFIG.SPAWN_Z + (Math.random() - 0.5) * 3;
