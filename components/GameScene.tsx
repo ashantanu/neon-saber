@@ -8,6 +8,14 @@ import { HandData, GameState, Song, CubeData, ExplosionEvent } from '../types';
 import { GAME_CONFIG, COLORS } from '../constants';
 import { getAudio8Bit } from '../utils/audio8bit';
 
+// Funny emojis to display on boxes
+const FUNNY_EMOJIS = [
+    '😂', '🤣', '😜', '🤪', '😎', '🥳', '🤡', '👻',
+    '💀', '👽', '🤖', '😈', '👹', '🎃', '💩', '🙈',
+    '🐸', '🦄', '🔥', '💥', '⚡', '🌈', '🍕', '🌮',
+    '🍩', '🎮', '🎯', '🚀', '💎', '🏆', '🎸', '🎪'
+];
+
 // Declare intrinsic elements for TS
 declare global {
   namespace JSX {
@@ -236,7 +244,14 @@ const Cube: React.FC<CubeProps> = ({
         <mesh ref={meshRef} position={data.position}>
              <boxGeometry args={[0.5, 0.5, 0.5]} />
              <primitive object={data.color === 'cyan' ? matCyan : matOrange} attach="material" />
-             <mesh geometry={arrowGeo} material={matWhite} rotation={[Math.PI/2, 0, 0]} position={[0, 0, 0.26]} />
+             <Text
+                position={[0, 0, 0.26]}
+                fontSize={0.3}
+                anchorX="center"
+                anchorY="middle"
+             >
+                {data.emoji}
+             </Text>
              <pointLight color={data.color === 'cyan' ? COLORS.CYAN : COLORS.ORANGE} distance={2} intensity={2} />
         </mesh>
     );
@@ -293,12 +308,14 @@ const CubeManager = ({
             // Add slight depth variation for more dynamic positioning
             const depthZ = GAME_CONFIG.SPAWN_Z + (Math.random() - 0.5) * 3;
 
+            const randomEmoji = FUNNY_EMOJIS[Math.floor(Math.random() * FUNNY_EMOJIS.length)];
             const newCube: CubeData = {
                 id: `cube-${idCounter.current++}`,
                 position: new Vector3(laneX, heightY, depthZ),
                 color: colorType,
                 active: true,
-                spawnTime: now
+                spawnTime: now,
+                emoji: randomEmoji
             };
             setCubes(prev => [...prev, newCube]);
         }
