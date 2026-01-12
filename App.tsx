@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Vector3 } from 'three';
+import { Vector3, Quaternion } from 'three';
 import HandTracker from './components/HandTracker';
 import GameScene from './components/GameScene';
 import UIOverlay from './components/UIOverlay';
@@ -37,6 +37,17 @@ const App: React.FC = () => {
     time: 0
   });
 
+  // Smoothed position/direction refs - these lerp towards raw MediaPipe data
+  const smoothedLeft = useRef<Vector3 | null>(null);
+  const smoothedRight = useRef<Vector3 | null>(null);
+  const smoothedLeftDir = useRef(new Vector3(0, 1, 0));
+  const smoothedRightDir = useRef(new Vector3(0, 1, 0));
+  const upVec = useRef(new Vector3(0, 1, 0));
+
+  // Smoothing factors (0-1, higher = more responsive but less smooth)
+  const POSITION_SMOOTHING = 0.3;  // Lerp factor for positions
+  const DIRECTION_SMOOTHING = 0.25; // Lerp factor for directions
+
   const handleHandUpdate = useCallback((
       left: Vector3 | null,
       right: Vector3 | null,
@@ -46,11 +57,47 @@ const App: React.FC = () => {
     const now = performance.now() / 1000;
     const delta = now - prevHands.current.time;
 
-    // Update Velocity with history tracking for smoother average calculations
+    // --- POSITION SMOOTHING ---
+    // Smooth left hand position
+    if (left) {
+        if (smoothedLeft.current === null) {
+            smoothedLeft.current = left.clone();
+        } else {
+            smoothedLeft.current.lerp(left, POSITION_SMOOTHING);
+        }
+    } else {
+        smoothedLeft.current = null;
+    }
+
+    // Smooth right hand position
+    if (right) {
+        if (smoothedRight.current === null) {
+            smoothedRight.current = right.clone();
+        } else {
+            smoothedRight.current.lerp(right, POSITION_SMOOTHING);
+        }
+    } else {
+        smoothedRight.current = null;
+    }
+
+    // --- DIRECTION SMOOTHING ---
+    // Smooth left direction using lerp then normalize
+    if (leftDir) {
+        smoothedLeftDir.current.lerp(leftDir, DIRECTION_SMOOTHING);
+        smoothedLeftDir.current.normalize();
+    }
+
+    // Smooth right direction using lerp then normalize
+    if (rightDir) {
+        smoothedRightDir.current.lerp(rightDir, DIRECTION_SMOOTHING);
+        smoothedRightDir.current.normalize();
+    }
+
+    // --- VELOCITY TRACKING (using smoothed positions for consistency) ---
     if (delta > 0) {
-        // Left hand velocity
-        if (left && prevHands.current.left) {
-            const newLeftVel = new Vector3().subVectors(left, prevHands.current.left).divideScalar(delta);
+        // Left hand velocity (based on smoothed positions)
+        if (smoothedLeft.current && prevHands.current.left) {
+            const newLeftVel = new Vector3().subVectors(smoothedLeft.current, prevHands.current.left).divideScalar(delta);
 
             // Track velocity history
             handDataRef.current.leftVelocityHistory.push(newLeftVel.clone());
@@ -70,9 +117,9 @@ const App: React.FC = () => {
             handDataRef.current.leftVelocityHistory.length = 0;
         }
 
-        // Right hand velocity
-        if (right && prevHands.current.right) {
-            const newRightVel = new Vector3().subVectors(right, prevHands.current.right).divideScalar(delta);
+        // Right hand velocity (based on smoothed positions)
+        if (smoothedRight.current && prevHands.current.right) {
+            const newRightVel = new Vector3().subVectors(smoothedRight.current, prevHands.current.right).divideScalar(delta);
 
             // Track velocity history
             handDataRef.current.rightVelocityHistory.push(newRightVel.clone());
@@ -93,16 +140,16 @@ const App: React.FC = () => {
         }
     }
 
-    // Update Positions & Directions
-    handDataRef.current.left = left;
-    handDataRef.current.right = right;
-    if (leftDir) handDataRef.current.leftDirection.copy(leftDir);
-    if (rightDir) handDataRef.current.rightDirection.copy(rightDir);
+    // --- UPDATE HAND DATA REF with smoothed values ---
+    handDataRef.current.left = smoothedLeft.current ? smoothedLeft.current.clone() : null;
+    handDataRef.current.right = smoothedRight.current ? smoothedRight.current.clone() : null;
+    handDataRef.current.leftDirection.copy(smoothedLeftDir.current);
+    handDataRef.current.rightDirection.copy(smoothedRightDir.current);
 
-    // Save previous
+    // Save previous (using smoothed positions for velocity calculation)
     prevHands.current = {
-        left: left ? left.clone() : null,
-        right: right ? right.clone() : null,
+        left: smoothedLeft.current ? smoothedLeft.current.clone() : null,
+        right: smoothedRight.current ? smoothedRight.current.clone() : null,
         time: now
     };
   }, []);
