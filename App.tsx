@@ -14,7 +14,8 @@ const App: React.FC = () => {
   const [currentSong, setCurrentSong] = useState<Song | null>(SONGS[0]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [difficulty, setDifficulty] = useState(1); // 1 = Normal, 2 = Hard, 3 = Expert
-  
+  const [previewingSongId, setPreviewingSongId] = useState<string | null>(null);
+
   // Audio Ref
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
@@ -177,13 +178,15 @@ const App: React.FC = () => {
         setTimeLeft(60); // 1 minute timer
         setGameState(GameState.PLAYING);
 
-        // Play 8-bit game start sound
+        // Stop any preview and play 8-bit game start sound
         const audio8bit = getAudio8Bit();
+        audio8bit.stopTrackPreview();
+        setPreviewingSongId(null);
         audio8bit.playGameStart();
 
-        // Start 8-bit background music after a short delay
+        // Start 8-bit background music after a short delay (with correct song pattern)
         setTimeout(() => {
-          audio8bit.startBackgroundMusic();
+          audio8bit.startBackgroundMusic(currentSong.id);
         }, 600);
 
         // Ensure audio src is set
@@ -227,9 +230,11 @@ const App: React.FC = () => {
     }
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
 
-    // Stop 8-bit background music
+    // Stop 8-bit background music and any preview
     const audio8bit = getAudio8Bit();
     audio8bit.stopBackgroundMusic();
+    audio8bit.stopTrackPreview();
+    setPreviewingSongId(null);
   };
 
   const handleScore = (points: number) => {
@@ -241,16 +246,28 @@ const App: React.FC = () => {
       setStreak(0);
   };
 
+  const handleTogglePreview = useCallback((song: Song) => {
+    const audio8bit = getAudio8Bit();
+    const isPlaying = audio8bit.playTrackPreview(song.id);
+    setPreviewingSongId(isPlaying ? song.id : null);
+  }, []);
+
   // Initialize Audio Element
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.crossOrigin = "anonymous";
     audioRef.current.volume = 0.6;
     audioRef.current.preload = "auto";
-    
+
     audioRef.current.onerror = (e) => {
         console.error("Audio Error:", audioRef.current?.error, e);
     };
+
+    // Set up callback for when preview auto-stops
+    const audio8bit = getAudio8Bit();
+    audio8bit.setOnPreviewEnd(() => {
+      setPreviewingSongId(null);
+    });
 
     return () => {
         if (audioRef.current) {
@@ -260,6 +277,8 @@ const App: React.FC = () => {
         if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current);
         }
+        // Clean up the callback
+        audio8bit.setOnPreviewEnd(null);
     };
   }, []);
 
@@ -285,7 +304,9 @@ const App: React.FC = () => {
         timeLeft={timeLeft}
         currentSong={currentSong}
         difficulty={difficulty}
+        previewingSongId={previewingSongId}
         onSelectSong={setCurrentSong}
+        onTogglePreview={handleTogglePreview}
         onSetDifficulty={setDifficulty}
         onStart={startGame}
         onRestart={restartGame}
