@@ -4,7 +4,7 @@ import HandTracker from './components/HandTracker';
 import GameScene from './components/GameScene';
 import UIOverlay from './components/UIOverlay';
 import { GameState, HandData, Song } from './types';
-import { SONGS } from './constants';
+import { SONGS, GAME_CONFIG } from './constants';
 import { getAudio8Bit } from './utils/audio8bit';
 
 const App: React.FC = () => {
@@ -19,14 +19,16 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
 
-  // Hand Data Ref
+  // Hand Data Ref - using refs instead of state for buttery-smooth 60fps updates
   const handDataRef = useRef<HandData>({
     left: null,
     right: null,
     leftDirection: new Vector3(0, 1, 0),
     rightDirection: new Vector3(0, 1, 0),
     leftVelocity: new Vector3(0, 0, 0),
-    rightVelocity: new Vector3(0, 0, 0)
+    rightVelocity: new Vector3(0, 0, 0),
+    leftVelocityHistory: [],
+    rightVelocityHistory: []
   });
 
   const prevHands = useRef<{ left: Vector3 | null, right: Vector3 | null, time: number }>({
@@ -36,26 +38,58 @@ const App: React.FC = () => {
   });
 
   const handleHandUpdate = useCallback((
-      left: Vector3 | null, 
+      left: Vector3 | null,
       right: Vector3 | null,
       leftDir: Vector3 | null,
       rightDir: Vector3 | null
   ) => {
     const now = performance.now() / 1000;
     const delta = now - prevHands.current.time;
-    
-    // Update Velocity (Position based)
+
+    // Update Velocity with history tracking for smoother average calculations
     if (delta > 0) {
+        // Left hand velocity
         if (left && prevHands.current.left) {
-            handDataRef.current.leftVelocity.subVectors(left, prevHands.current.left).divideScalar(delta);
+            const newLeftVel = new Vector3().subVectors(left, prevHands.current.left).divideScalar(delta);
+
+            // Track velocity history
+            handDataRef.current.leftVelocityHistory.push(newLeftVel.clone());
+            if (handDataRef.current.leftVelocityHistory.length > GAME_CONFIG.VELOCITY_HISTORY_SIZE) {
+                handDataRef.current.leftVelocityHistory.shift();
+            }
+
+            // Compute averaged velocity from history for smoother slash detection
+            const avgLeftVel = new Vector3();
+            for (const vel of handDataRef.current.leftVelocityHistory) {
+                avgLeftVel.add(vel);
+            }
+            avgLeftVel.divideScalar(handDataRef.current.leftVelocityHistory.length);
+            handDataRef.current.leftVelocity.copy(avgLeftVel);
         } else {
             handDataRef.current.leftVelocity.set(0, 0, 0);
+            handDataRef.current.leftVelocityHistory.length = 0;
         }
 
+        // Right hand velocity
         if (right && prevHands.current.right) {
-            handDataRef.current.rightVelocity.subVectors(right, prevHands.current.right).divideScalar(delta);
+            const newRightVel = new Vector3().subVectors(right, prevHands.current.right).divideScalar(delta);
+
+            // Track velocity history
+            handDataRef.current.rightVelocityHistory.push(newRightVel.clone());
+            if (handDataRef.current.rightVelocityHistory.length > GAME_CONFIG.VELOCITY_HISTORY_SIZE) {
+                handDataRef.current.rightVelocityHistory.shift();
+            }
+
+            // Compute averaged velocity from history for smoother slash detection
+            const avgRightVel = new Vector3();
+            for (const vel of handDataRef.current.rightVelocityHistory) {
+                avgRightVel.add(vel);
+            }
+            avgRightVel.divideScalar(handDataRef.current.rightVelocityHistory.length);
+            handDataRef.current.rightVelocity.copy(avgRightVel);
         } else {
             handDataRef.current.rightVelocity.set(0, 0, 0);
+            handDataRef.current.rightVelocityHistory.length = 0;
         }
     }
 
