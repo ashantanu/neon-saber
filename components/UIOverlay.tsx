@@ -1,7 +1,7 @@
 import React from 'react';
 import { GameState, Song } from '../types';
 import { SONGS } from '../constants';
-import { Play, RotateCcw, Volume2, Music, Mic, Timer } from 'lucide-react';
+import { Play, RotateCcw, Volume2, VolumeX, Music, Mic, Timer } from 'lucide-react';
 
 interface UIOverlayProps {
   gameState: GameState;
@@ -10,7 +10,9 @@ interface UIOverlayProps {
   timeLeft: number;
   currentSong: Song | null;
   difficulty: number;
+  previewingSongId: string | null;
   onSelectSong: (song: Song) => void;
+  onTogglePreview: (song: Song) => void;
   onSetDifficulty: (difficulty: number) => void;
   onStart: () => void;
   onRestart: () => void;
@@ -23,7 +25,9 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
   timeLeft,
   currentSong,
   difficulty,
+  previewingSongId,
   onSelectSong,
+  onTogglePreview,
   onSetDifficulty,
   onStart,
   onRestart
@@ -71,28 +75,47 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
            </div>
 
            <div className="flex-1 overflow-y-auto space-y-2 pr-2 mb-8">
-               {SONGS.map(song => (
-                   <button 
-                     key={song.id}
-                     onClick={() => onSelectSong(song)}
-                     className={`w-full flex items-center justify-between p-4 rounded-lg border transition-all duration-200 group text-left
-                         ${currentSong?.id === song.id 
-                             ? 'bg-cyan-900/50 border-cyan-400 shadow-[0_0_10px_rgba(0,255,255,0.2)]' 
-                             : 'bg-gray-900/40 border-gray-800 hover:border-cyan-700 hover:bg-gray-800'
-                         }`}
-                   >
-                       <div className="flex items-center gap-3">
-                           <div className={`p-2 rounded-full ${currentSong?.id === song.id ? 'bg-cyan-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
-                               <Music size={16} />
+               {SONGS.map(song => {
+                   const isSelected = currentSong?.id === song.id;
+                   const isPreviewing = previewingSongId === song.id;
+
+                   return (
+                       <button
+                         key={song.id}
+                         onClick={() => {
+                           onSelectSong(song);
+                           onTogglePreview(song);
+                         }}
+                         className={`w-full flex items-center justify-between p-4 rounded-lg border transition-all duration-200 group text-left
+                             ${isSelected
+                                 ? 'bg-cyan-900/50 border-cyan-400 shadow-[0_0_10px_rgba(0,255,255,0.2)]'
+                                 : 'bg-gray-900/40 border-gray-800 hover:border-cyan-700 hover:bg-gray-800'
+                             }
+                             ${isPreviewing ? 'ring-2 ring-cyan-400 ring-opacity-50' : ''}`}
+                       >
+                           <div className="flex items-center gap-3">
+                               <div className={`p-2 rounded-full transition-colors ${
+                                   isPreviewing
+                                     ? 'bg-cyan-400 text-black animate-pulse'
+                                     : isSelected
+                                       ? 'bg-cyan-500 text-black'
+                                       : 'bg-gray-700 text-gray-300'
+                               }`}>
+                                   <Music size={16} />
+                               </div>
+                               <div>
+                                   <div className="font-bold text-white text-sm group-hover:text-cyan-300 transition-colors">{song.title}</div>
+                                   <div className="text-[10px] text-gray-400 uppercase">{song.artist}</div>
+                               </div>
                            </div>
-                           <div>
-                               <div className="font-bold text-white text-sm group-hover:text-cyan-300 transition-colors">{song.title}</div>
-                               <div className="text-[10px] text-gray-400 uppercase">{song.artist}</div>
-                           </div>
-                       </div>
-                       {currentSong?.id === song.id && <Volume2 className="text-cyan-400 animate-pulse" size={16} />}
-                   </button>
-               ))}
+                           {isPreviewing ? (
+                               <Volume2 className="text-cyan-400 animate-pulse" size={16} />
+                           ) : isSelected ? (
+                               <VolumeX className="text-gray-500" size={16} />
+                           ) : null}
+                       </button>
+                   );
+               })}
            </div>
 
            {/* Difficulty Slider */}
